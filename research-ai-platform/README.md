@@ -1,0 +1,128 @@
+# ResearchAI — AI-Powered Research Collaboration & Idea Discovery Platform
+
+Upload research papers, chat with them using RAG, get research-gap and
+project-idea suggestions, and get matched with collaborators based on
+skills — all running on a free, locally-hosted LLM (Ollama). No paid
+API keys required.
+
+## Stack
+
+- **Frontend:** React 18 + Vite + Tailwind CSS
+- **Backend:** FastAPI + SQLAlchemy (SQLite)
+- **RAG:** PyMuPDF (text extraction) → Sentence Transformers (embeddings) → ChromaDB (vector store) → Ollama (local LLM)
+- **Auth:** JWT (python-jose + passlib)
+
+## Project structure
+
+```
+research-ai-platform/
+  backend/
+    app/
+      main.py          # FastAPI app + all routes
+      models.py        # SQLAlchemy tables
+      schemas.py        # Pydantic request/response models
+      database.py       # DB session setup
+      auth.py            # JWT auth
+      rag.py             # PDF -> chunks -> embeddings -> ChromaDB -> Ollama
+      matching.py        # Skill-based collaborator matching
+      ollama_client.py   # Ollama HTTP wrapper
+    requirements.txt
+  frontend/
+    src/
+      pages/           # Landing, Login, Register, Dashboard, Papers,
+                        # PaperDetail (chat/summarize/gaps/ideas),
+                        # Ideas, Collaborators, Projects
+      components/Layout.jsx
+      api.js            # fetch wrapper for all backend calls
+      AuthContext.jsx
+    package.json
+```
+
+## 1. Install Ollama (free local LLM — this is what makes AI features work)
+
+1. Download from https://ollama.com and install it.
+2. Pull a model (llama3.1 is a good default; use a smaller model like
+   `llama3.2` or `phi3` if your machine has limited RAM):
+
+   ```bash
+   ollama pull llama3.1
+   ```
+
+3. Make sure it's running:
+
+   ```bash
+   ollama serve
+   ```
+
+   (On Mac/Windows the desktop app runs this automatically.)
+
+If you pull a different model, update `DEFAULT_MODEL` in
+`backend/app/ollama_client.py`.
+
+## 2. Run the backend
+
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+The first request that touches embeddings will download the
+`all-MiniLM-L6-v2` model (~90MB, one-time, from Hugging Face — needs
+internet the first time only). The API will be live at
+http://localhost:8000, with interactive docs at
+http://localhost:8000/docs.
+
+## 3. Run the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173.
+
+## 4. Try it out
+
+1. Register an account with some skills (e.g. `Python, Machine Learning, CNN`)
+   and interests (e.g. `Healthcare AI, Computer Vision`).
+2. Go to **Papers** → upload a PDF research paper (arXiv papers work well —
+   see below for where to get free ones).
+3. Open the paper → **Summarize**, ask questions in **Chat**, run
+   **Research Gaps**, or **Generate Ideas**.
+4. Go to **Collaborators**, type in some required skills, and see the
+   ranked match list (register a couple more test accounts with
+   different skills first so there's something to match against).
+5. Create a **Project** from an idea + matched team.
+
+## Where to get free research papers for testing
+
+- https://arxiv.org — search any topic, download the PDF directly.
+- https://www.semanticscholar.org
+- https://www.ncbi.nlm.nih.gov/pmc/ (PubMed Central, open access)
+
+10–30 papers is plenty to demo the whole pipeline.
+
+## Notes on scope / what's intentionally simple
+
+This is an MVP matching the "must-have" feature list: profile, upload,
+RAG chat, summarization, gap-finding, idea generation, skill-based
+matching, and a basic project workspace. Left out on purpose to keep it
+buildable in a reasonable time: real-time chat between users, a full
+social graph, mobile app, and a custom-trained matching model — the
+skill-overlap + embedding-similarity scorer in `matching.py` is simple
+by design and easy to explain in a review.
+
+## Troubleshooting
+
+- **"Could not reach Ollama" errors** — make sure `ollama serve` is
+  running and you've pulled a model.
+- **Upload succeeds but chat/summarize fail** — check the backend
+  terminal for the actual Ollama error; the most common cause is the
+  model name in `ollama_client.py` not matching what you pulled.
+- **CORS errors in the browser console** — confirm the frontend is
+  running on port 5173 (the backend's CORS config only allows that
+  origin by default; edit `main.py` if you change ports).
