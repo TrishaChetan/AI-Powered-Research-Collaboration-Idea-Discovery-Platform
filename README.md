@@ -45,7 +45,7 @@ research-ai-platform/
    `llama3.2` or `phi3` if your machine has limited RAM):
 
    ```bash
-   ollama pull llama3.1
+   ollama pull qwen2.5:0.5b
    ```
 
 3. Make sure it's running:
@@ -66,14 +66,14 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8002
 ```
 
 The first request that touches embeddings will download the
 `all-MiniLM-L6-v2` model (~90MB, one-time, from Hugging Face — needs
 internet the first time only). The API will be live at
-http://localhost:8001, with interactive docs at
-http://localhost:8001/docs.
+http://localhost:8002, with interactive docs at
+http://localhost:8002/docs.
 
 ## 3. Run the frontend
 
@@ -141,3 +141,7 @@ by design and easy to explain in a review.
 - **CORS errors in the browser console** — confirm the frontend is
   running on port 5173 (the backend's CORS config only allows that
   origin by default; edit `main.py` if you change ports).
+
+
+
+
