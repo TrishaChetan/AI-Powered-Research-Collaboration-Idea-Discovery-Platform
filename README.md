@@ -142,6 +142,3 @@ by design and easy to explain in a review.
   running on port 5173 (the backend's CORS config only allows that
   origin by default; edit `main.py` if you change ports).
 
-
-
-
