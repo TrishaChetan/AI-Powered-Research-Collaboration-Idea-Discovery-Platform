@@ -104,6 +104,7 @@ class ResearchIdea(Base):
     id = Column(Integer, primary_key=True, index=True)
     paper_id = Column(Integer, ForeignKey("papers.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    parent_idea_id = Column(Integer, ForeignKey("research_ideas.id"), nullable=True)
     title = Column(String, nullable=False)
     problem = Column(Text, default="")
     approach = Column(Text, default="")
@@ -113,6 +114,7 @@ class ResearchIdea(Base):
 
     source_paper = relationship("Paper", back_populates="ideas")
     creator = relationship("User", back_populates="ideas")
+    parent_idea = relationship("ResearchIdea", remote_side=[id], backref="child_ideas")
 
 
 class Project(Base):

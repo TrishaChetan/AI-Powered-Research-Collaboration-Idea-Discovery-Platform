@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api'
 
-const TABS = ['Summary', 'Chat', 'Research Gaps', 'Generate Ideas']
+const TABS = ['Summary', 'Chat', 'Research Gaps', 'Generate Ideas', 'Related Papers']
 
 export default function PaperDetail() {
   const { id } = useParams()
@@ -17,6 +17,7 @@ export default function PaperDetail() {
   const [messages, setMessages] = useState([]) // {role, text, sources}
   const [question, setQuestion] = useState('')
   const [ideas, setIdeas] = useState([])
+  const [related, setRelated] = useState(null)
 
   useEffect(() => {
     api.getPaper(id).then(setPaper).catch((e) => setError(e.message)).finally(() => setLoading(false))
@@ -72,6 +73,19 @@ export default function PaperDetail() {
     try {
       const res = await api.generateIdeas({ paper_id: Number(id), num_ideas: 3 })
       setIdeas(res)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRelated = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const res = await api.relatedPapers(id)
+      setRelated(res)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -197,8 +211,51 @@ export default function PaperDetail() {
                   <p className="text-sm text-gray-600 mt-2"><strong>Problem:</strong> {idea.problem}</p>
                   <p className="text-sm text-gray-600 mt-1"><strong>Approach:</strong> {idea.approach}</p>
                   <p className="text-xs text-gray-500 mt-2">Skills: {idea.required_skills_text}</p>
-                  <span className="inline-block mt-2 text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">{idea.difficulty}</span>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">{idea.difficulty}</span>
+                    <a
+                      href={api.exportIdeaUrl(idea.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    >
+                      Export PDF
+                    </a>
+                  </div>
                 </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              Saved ideas also appear on the <strong>Ideas</strong> page, where you can build follow-up ideas on top of them.
+            </p>
+          </div>
+        )}
+
+        {tab === 'Related Papers' && (
+          <div>
+            <button
+              onClick={handleRelated}
+              disabled={busy}
+              className="px-4 py-2 rounded-md bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-60"
+            >
+              {busy ? 'Searching arXiv…' : 'Find Related Papers'}
+            </button>
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              {related && related.length === 0 && (
+                <p className="text-sm text-gray-500">No related papers found on arXiv for this topic.</p>
+              )}
+              {related && related.map((r, i) => (
+                <a
+                  key={i}
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="bg-white border border-gray-200 rounded-xl p-5 hover:border-brand-400 transition"
+                >
+                  <h3 className="font-semibold text-sm">{r.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1">{r.authors.slice(0, 3).join(', ')}{r.authors.length > 3 ? ' et al.' : ''} · {r.published}</p>
+                  <p className="text-sm text-gray-600 mt-2">{r.summary}</p>
+                </a>
               ))}
             </div>
           </div>

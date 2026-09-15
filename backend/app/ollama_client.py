@@ -15,7 +15,7 @@ import json
 from typing import Optional
 
 OLLAMA_BASE_URL = "http://localhost:11434"
-DEFAULT_MODEL = "llama3.1"  # change to whatever model you've pulled
+DEFAULT_MODEL = "qwen2.5:0.5b"  # change to whatever model you've pulled
 
 
 class OllamaError(Exception):
@@ -23,13 +23,18 @@ class OllamaError(Exception):
 
 
 def generate(prompt: str, model: str = DEFAULT_MODEL, system: Optional[str] = None,
-             temperature: float = 0.3) -> str:
+             temperature: float = 0.3, num_predict: int = 500) -> str:
     """Single-shot generation call against Ollama's /api/generate endpoint."""
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": temperature},
+        "options": {
+            "temperature": temperature,
+            "repeat_penalty": 1.3,
+            "repeat_last_n": 256,
+            "num_predict": num_predict,
+        },
     }
     if system:
         payload["system"] = system
@@ -75,3 +80,5 @@ def generate_json(prompt: str, model: str = DEFAULT_MODEL, system: Optional[str]
             return json.loads(cleaned[start:end])
         except json.JSONDecodeError as e:
             raise OllamaError(f"Model did not return valid JSON: {raw[:300]}") from e
+
+

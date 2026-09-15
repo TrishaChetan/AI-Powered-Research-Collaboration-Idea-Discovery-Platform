@@ -74,6 +74,7 @@ class ResearchIdeaOut(BaseModel):
     approach: str
     required_skills_text: str
     difficulty: str
+    parent_idea_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -83,6 +84,42 @@ class GenerateIdeasRequest(BaseModel):
     paper_id: Optional[int] = None
     interests: Optional[List[str]] = []
     num_ideas: int = 3
+
+
+class BuildOnIdeaRequest(BaseModel):
+    num_ideas: int = 2
+
+
+# ---------- Paper comparison ----------
+
+class CompareRequest(BaseModel):
+    paper_ids: List[int]
+
+
+class ComparisonRow(BaseModel):
+    dimension: str
+    values: List[str]  # one value per paper, same order as paper_ids
+
+
+class CompareResponse(BaseModel):
+    paper_titles: List[str]
+    rows: List[ComparisonRow]
+
+
+# ---------- Related papers (arXiv) ----------
+
+class RelatedPaper(BaseModel):
+    title: str
+    authors: List[str]
+    summary: str
+    url: str
+    published: str
+
+
+# ---------- Export ----------
+
+class ExportIdeaRequest(BaseModel):
+    idea_id: int
 
 
 # ---------- Matching ----------

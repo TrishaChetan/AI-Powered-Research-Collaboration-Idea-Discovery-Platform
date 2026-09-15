@@ -26,7 +26,6 @@ _chroma_client = None
 def get_embedder():
     global _embedder
     if _embedder is None:
-        # Small, fast, free, good-enough-quality embedding model.
         _embedder = SentenceTransformer("all-MiniLM-L6-v2")
     return _embedder
 
@@ -43,27 +42,14 @@ def get_collection():
     return client.get_or_create_collection(name="paper_chunks")
 
 
-# ---------------------------------------------------------------------------
-# Step 1-2: Extract text from PDF
-# ---------------------------------------------------------------------------
-
 def extract_text_by_page(file_path: str) -> List[str]:
-    """Returns a list of page texts, index 0 = page 1."""
     doc = fitz.open(file_path)
     pages = [page.get_text("text") for page in doc]
     doc.close()
     return pages
 
 
-# ---------------------------------------------------------------------------
-# Step 3: Chunk the text
-# ---------------------------------------------------------------------------
-
 def chunk_pages(pages: List[str], chunk_size: int = 800, overlap: int = 150) -> List[Dict]:
-    """
-    Simple sliding-window chunker over each page's text, keeping track of
-    which page each chunk came from so we can cite sources later.
-    """
     chunks = []
     for page_num, text in enumerate(pages, start=1):
         text = text.strip()
@@ -81,16 +67,7 @@ def chunk_pages(pages: List[str], chunk_size: int = 800, overlap: int = 150) -> 
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# Step 4-5: Embed & store
-# ---------------------------------------------------------------------------
-
 def index_paper(paper_id: int, file_path: str) -> int:
-    """
-    Processes a PDF end-to-end and stores its chunks in ChromaDB,
-    namespaced by paper_id so retrieval can be scoped to one paper.
-    Returns the number of chunks stored.
-    """
     pages = extract_text_by_page(file_path)
     chunks = chunk_pages(pages)
     if not chunks:
@@ -107,10 +84,6 @@ def index_paper(paper_id: int, file_path: str) -> int:
     collection.add(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
     return len(chunks)
 
-
-# ---------------------------------------------------------------------------
-# Step 6-7: Retrieval
-# ---------------------------------------------------------------------------
 
 def retrieve_relevant_chunks(paper_id: int, question: str, top_k: int = 4) -> List[Dict]:
     embedder = get_embedder()
@@ -131,10 +104,6 @@ def retrieve_relevant_chunks(paper_id: int, question: str, top_k: int = 4) -> Li
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# Step 8-9: Build grounded prompt & generate
-# ---------------------------------------------------------------------------
-
 def answer_question(paper_id: int, question: str) -> Dict:
     chunks = retrieve_relevant_chunks(paper_id, question)
     if not chunks:
@@ -153,7 +122,7 @@ def answer_question(paper_id: int, question: str) -> Dict:
         f"QUESTION: {question}\n\n"
         "Answer clearly and concisely, and mention which page(s) support your answer."
     )
-    answer = ollama_client.generate(prompt)
+    answer = ollama_client.generate(prompt, num_predict=220)
     sources = [{"page": c["page"], "excerpt": c["text"][:200]} for c in chunks]
     return {"answer": answer, "sources": sources}
 
@@ -162,21 +131,66 @@ def summarize_paper(paper_id: int, full_text_sample: str) -> str:
     prompt = (
         "Summarize the following research paper content. Cover: research objective, "
         "methodology, dataset used, key results, and conclusion. Be concise and use "
-        "short bullet points under each heading.\n\n"
-        f"PAPER CONTENT:\n{full_text_sample}\n"
+        "short bullet points under each heading -- one line per bullet, no repetition.\n\n"
+        f"PAPER CONTENT:\n{full_text_sample[:3000]}\n"
     )
-    return ollama_client.generate(prompt)
+    return ollama_client.generate(prompt, num_predict=250)
 
 
 def identify_research_gaps(full_text_sample: str) -> str:
     prompt = (
         "Analyze this research paper's methodology, results, and limitations. "
-        "Identify 2-4 concrete research gaps or weaknesses, and for each one suggest "
-        "a possible extension or improvement. Format as a numbered list with "
-        "'Gap:' and 'Possible extension:' for each.\n\n"
-        f"PAPER CONTENT:\n{full_text_sample}\n"
+        "Identify exactly 3 research gaps or weaknesses. Each gap must be about a "
+        "DIFFERENT aspect of the paper (e.g. one about the dataset, one about the "
+        "method, one about evaluation) -- do not repeat the same point twice in "
+        "different words. For each gap, give one sentence naming the gap and one "
+        "sentence suggesting an extension. Be concise -- no more than 2 sentences per gap.\n"
+        "Format exactly like this:\n"
+        "1. Gap: ... | Extension: ...\n"
+        "2. Gap: ... | Extension: ...\n"
+        "3. Gap: ... | Extension: ...\n\n"
+        f"PAPER CONTENT:\n{full_text_sample[:3000]}\n"
     )
-    return ollama_client.generate(prompt)
+    return ollama_client.generate(prompt, num_predict=180)
+
+
+def compare_papers(paper_samples: List[Dict]) -> Dict:
+    papers_block = "\n\n".join(
+        f"PAPER {i+1}: {p['title']}\nCONTENT:\n{p['text'][:1500]}"
+        for i, p in enumerate(paper_samples)
+    )
+    n = len(paper_samples)
+    prompt = (
+        f"Compare these {n} research papers across these dimensions: "
+        "Research Objective, Methodology, Dataset Used, Key Results, Limitations. "
+        f"For each dimension, give a short (1-2 sentence) value for each of the {n} papers, "
+        "in the same order they're given below. "
+        "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
+        '[{"dimension": "Research Objective", "values": ["paper 1 value", "paper 2 value", ...]}, ...]\n\n'
+        f"{papers_block}\n"
+    )
+    result = ollama_client.generate_json(prompt, num_predict=350)
+    if isinstance(result, dict):
+        result = result.get("rows", [])
+    return {"rows": result}
+
+
+def build_on_idea(parent_idea: Dict, num_ideas: int = 2) -> List[Dict]:
+    prompt = (
+        "A researcher previously proposed this idea:\n"
+        f"Title: {parent_idea['title']}\n"
+        f"Problem: {parent_idea['problem']}\n"
+        f"Approach: {parent_idea['approach']}\n\n"
+        f"Propose {num_ideas} concrete follow-up ideas that build directly on top of this one "
+        "(e.g. the next logical step, a harder variant, or a real-world deployment of it). "
+        "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
+        '[{"title": "...", "problem": "...", "approach": "...", '
+        '"required_skills": ["skill1", "skill2"], "difficulty": "Beginner|Intermediate|Advanced"}]\n'
+    )
+    result = ollama_client.generate_json(prompt, num_predict=280)
+    if isinstance(result, dict):
+        result = result.get("ideas", [])
+    return result
 
 
 def generate_research_ideas(full_text_sample: str, interests: List[str], num_ideas: int = 3) -> List[Dict]:
@@ -188,9 +202,9 @@ def generate_research_ideas(full_text_sample: str, interests: List[str], num_ide
         "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
         '[{"title": "...", "problem": "...", "approach": "...", '
         '"required_skills": ["skill1", "skill2"], "difficulty": "Beginner|Intermediate|Advanced"}]\n\n'
-        f"PAPER CONTENT:\n{full_text_sample}\n"
+        f"PAPER CONTENT:\n{full_text_sample[:2000]}\n"
     )
-    result = ollama_client.generate_json(prompt)
+    result = ollama_client.generate_json(prompt, num_predict=350)
     if isinstance(result, dict):
         result = result.get("ideas", [])
     return result

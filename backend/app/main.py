@@ -4,9 +4,10 @@ from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from . import models, schemas, auth, rag, matching
+from . import models, schemas, auth, rag, matching, related_papers, export as export_module
 from .database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
@@ -216,6 +217,46 @@ def paper_gaps(paper_id: int, db: Session = Depends(get_db)):
     return {"gaps": gaps}
 
 
+@app.get("/papers/{paper_id}/related", response_model=List[schemas.RelatedPaper])
+def paper_related(paper_id: int, db: Session = Depends(get_db)):
+    """Related Papers Finder — pulls real related papers from arXiv's free API."""
+    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    query = paper.topics if paper.topics else paper.title
+    try:
+        results = related_papers.search_related_papers(query or paper.title, max_results=6)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return results
+
+
+@app.post("/papers/compare", response_model=schemas.CompareResponse)
+def compare_papers(payload: schemas.CompareRequest, db: Session = Depends(get_db)):
+    """Paper Comparison — compares 2+ uploaded papers side-by-side."""
+    if len(payload.paper_ids) < 2:
+        raise HTTPException(status_code=400, detail="Select at least 2 papers to compare")
+
+    papers = []
+    for pid in payload.paper_ids:
+        paper = db.query(models.Paper).filter(models.Paper.id == pid).first()
+        if not paper:
+            raise HTTPException(status_code=404, detail=f"Paper {pid} not found")
+        papers.append(paper)
+
+    samples = [{"title": p.title, "text": paper_sample_text(p)} for p in papers]
+    try:
+        result = rag.compare_papers(samples)
+    except rag.ollama_client.OllamaError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    rows = [
+        schemas.ComparisonRow(dimension=r.get("dimension", ""), values=r.get("values", []))
+        for r in result.get("rows", [])
+    ]
+    return schemas.CompareResponse(paper_titles=[p.title for p in papers], rows=rows)
+
+
 # ---------------------------------------------------------------------------
 # Research ideas
 # ---------------------------------------------------------------------------
@@ -264,6 +305,68 @@ def generate_ideas(
 @app.get("/ideas", response_model=List[schemas.ResearchIdeaOut])
 def list_ideas(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return db.query(models.ResearchIdea).filter(models.ResearchIdea.user_id == current_user.id).all()
+
+
+@app.post("/ideas/{idea_id}/build-on", response_model=List[schemas.ResearchIdeaOut])
+def build_on_idea(
+    idea_id: int,
+    payload: schemas.BuildOnIdeaRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Idea Lineage — generates follow-up ideas that extend an existing saved idea."""
+    parent = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    try:
+        raw_ideas = rag.build_on_idea(
+            {"title": parent.title, "problem": parent.problem, "approach": parent.approach},
+            num_ideas=payload.num_ideas,
+        )
+    except rag.ollama_client.OllamaError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    saved = []
+    for idea in raw_ideas:
+        record = models.ResearchIdea(
+            paper_id=parent.paper_id,
+            user_id=current_user.id,
+            parent_idea_id=parent.id,
+            title=idea.get("title", "Untitled idea"),
+            problem=idea.get("problem", ""),
+            approach=idea.get("approach", ""),
+            required_skills_text=", ".join(idea.get("required_skills", [])),
+            difficulty=idea.get("difficulty", "Intermediate"),
+        )
+        db.add(record)
+        saved.append(record)
+
+    db.commit()
+    for r in saved:
+        db.refresh(r)
+    return saved
+
+
+@app.get("/ideas/{idea_id}/export")
+def export_idea(idea_id: int, db: Session = Depends(get_db)):
+    """Export to Document — downloads a saved idea as a research-proposal PDF."""
+    idea = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    file_path = export_module.export_idea_to_pdf({
+        "id": idea.id,
+        "title": idea.title,
+        "problem": idea.problem,
+        "approach": idea.approach,
+        "required_skills_text": idea.required_skills_text,
+        "difficulty": idea.difficulty,
+    })
+    return FileResponse(
+        file_path, media_type="application/pdf",
+        filename=os.path.basename(file_path),
+    )
 
 
 # ---------------------------------------------------------------------------

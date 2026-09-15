@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8000'
+const BASE_URL = 'http://localhost:8001'
 
 function getToken() {
   return localStorage.getItem('token')
@@ -49,6 +49,12 @@ export const api = {
 
   generateIdeas: (payload) => request('/ideas/generate', { method: 'POST', body: payload }),
   listIdeas: () => request('/ideas'),
+  buildOnIdea: (ideaId, numIdeas = 2) =>
+    request(`/ideas/${ideaId}/build-on`, { method: 'POST', body: { num_ideas: numIdeas } }),
+  exportIdeaUrl: (ideaId) => `${BASE_URL}/ideas/${ideaId}/export`,
+
+  relatedPapers: (paperId) => request(`/papers/${paperId}/related`),
+  comparePapers: (paperIds) => request('/papers/compare', { method: 'POST', body: { paper_ids: paperIds } }),
 
   matchCollaborators: (payload) => request('/match', { method: 'POST', body: payload }),
 

@@ -9,6 +9,7 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Papers from './pages/Papers'
 import PaperDetail from './pages/PaperDetail'
+import Compare from './pages/Compare'
 import Ideas from './pages/Ideas'
 import Collaborators from './pages/Collaborators'
 import Projects from './pages/Projects'
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/papers" element={<ProtectedRoute><Papers /></ProtectedRoute>} />
         <Route path="/papers/:id" element={<ProtectedRoute><PaperDetail /></ProtectedRoute>} />
+        <Route path="/compare" element={<ProtectedRoute><Compare /></ProtectedRoute>} />
         <Route path="/ideas" element={<ProtectedRoute><Ideas /></ProtectedRoute>} />
         <Route path="/collaborators" element={<ProtectedRoute><Collaborators /></ProtectedRoute>} />
         <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
