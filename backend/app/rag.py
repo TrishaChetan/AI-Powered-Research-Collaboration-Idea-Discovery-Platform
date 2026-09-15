@@ -33,7 +33,7 @@ def get_embedder():
 def get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
-        _chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
+        _chroma_client = chromadb.PersistentClient(path=CHROMA_DIR, settings=chromadb.Settings(anonymized_telemetry=False))
     return _chroma_client
 
 
@@ -87,7 +87,7 @@ def index_paper(paper_id: int, file_path: str) -> int:
 
 def retrieve_relevant_chunks(paper_id: int, question: str, top_k: int = 4) -> List[Dict]:
     embedder = get_embedder()
-    query_embedding = embedder.encode([question]).tolist()
+    query_embedding = embedder.encode([question], show_progress_bar=False, normalize_embeddings=True).tolist()
 
     collection = get_collection()
     results = collection.query(
@@ -105,7 +105,7 @@ def retrieve_relevant_chunks(paper_id: int, question: str, top_k: int = 4) -> Li
 
 
 def answer_question(paper_id: int, question: str) -> Dict:
-    chunks = retrieve_relevant_chunks(paper_id, question)
+    chunks = retrieve_relevant_chunks(paper_id, question, top_k=3)
     if not chunks:
         return {
             "answer": "I couldn't find relevant content in this paper for that question. "
@@ -122,7 +122,7 @@ def answer_question(paper_id: int, question: str) -> Dict:
         f"QUESTION: {question}\n\n"
         "Answer clearly and concisely, and mention which page(s) support your answer."
     )
-    answer = ollama_client.generate(prompt, num_predict=220)
+    answer = ollama_client.generate(prompt, num_predict=140)
     sources = [{"page": c["page"], "excerpt": c["text"][:200]} for c in chunks]
     return {"answer": answer, "sources": sources}
 
@@ -134,7 +134,7 @@ def summarize_paper(paper_id: int, full_text_sample: str) -> str:
         "short bullet points under each heading -- one line per bullet, no repetition.\n\n"
         f"PAPER CONTENT:\n{full_text_sample[:3000]}\n"
     )
-    return ollama_client.generate(prompt, num_predict=250)
+    return ollama_client.generate(prompt, num_predict=180)
 
 
 def identify_research_gaps(full_text_sample: str) -> str:
@@ -151,28 +151,70 @@ def identify_research_gaps(full_text_sample: str) -> str:
         "3. Gap: ... | Extension: ...\n\n"
         f"PAPER CONTENT:\n{full_text_sample[:3000]}\n"
     )
-    return ollama_client.generate(prompt, num_predict=180)
+    return ollama_client.generate(prompt, num_predict=140)
 
 
 def compare_papers(paper_samples: List[Dict]) -> Dict:
-    papers_block = "\n\n".join(
-        f"PAPER {i+1}: {p['title']}\nCONTENT:\n{p['text'][:1500]}"
-        for i, p in enumerate(paper_samples)
-    )
-    n = len(paper_samples)
-    prompt = (
-        f"Compare these {n} research papers across these dimensions: "
-        "Research Objective, Methodology, Dataset Used, Key Results, Limitations. "
-        f"For each dimension, give a short (1-2 sentence) value for each of the {n} papers, "
-        "in the same order they're given below. "
-        "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
-        '[{"dimension": "Research Objective", "values": ["paper 1 value", "paper 2 value", ...]}, ...]\n\n'
-        f"{papers_block}\n"
-    )
-    result = ollama_client.generate_json(prompt, num_predict=350)
-    if isinstance(result, dict):
-        result = result.get("rows", [])
-    return {"rows": result}
+    dimensions = [
+        "Research Objective",
+        "Methodology",
+        "Dataset Used",
+        "Key Results",
+        "Limitations",
+    ]
+
+    analyses = []
+
+    for paper in paper_samples:
+        prompt = (
+            "Analyze ONLY this research paper content. "
+            "Extract the requested information from the CONTENT, not from the title. "
+            "Return ONLY valid JSON with exactly these five fields: "
+            "research_objective, methodology, dataset_used, key_results, limitations. "
+            "Each value must be one concise sentence. "
+            "If information is not present, write 'Not specified in the provided content'. "
+            "Do not invent information. Do not return markdown.\n\n"
+            f"TITLE: {paper['title']}\n"
+            f"CONTENT:\n{paper['text'][:1800]}\n\n"
+            "FORMAT:\n"
+            '{"research_objective":"...",'
+            '"methodology":"...",'
+            '"dataset_used":"...",'
+            '"key_results":"...",'
+            '"limitations":"..."}'
+        )
+
+        result = ollama_client.generate_json(prompt, num_predict=220)
+        analyses.append(result)
+
+    rows = []
+
+    field_map = {
+        "Research Objective": "research_objective",
+        "Methodology": "methodology",
+        "Dataset Used": "dataset_used",
+        "Key Results": "key_results",
+        "Limitations": "limitations",
+    }
+
+    for dimension in dimensions:
+        field = field_map[dimension]
+        values = []
+
+        for analysis in analyses:
+            if isinstance(analysis, dict):
+                values.append(
+                    str(analysis.get(field, "Not specified in the provided content"))
+                )
+            else:
+                values.append("Not specified in the provided content")
+
+        rows.append({
+            "dimension": dimension,
+            "values": values,
+        })
+
+    return {"rows": rows}
 
 
 def build_on_idea(parent_idea: Dict, num_ideas: int = 2) -> List[Dict]:
@@ -183,11 +225,11 @@ def build_on_idea(parent_idea: Dict, num_ideas: int = 2) -> List[Dict]:
         f"Approach: {parent_idea['approach']}\n\n"
         f"Propose {num_ideas} concrete follow-up ideas that build directly on top of this one "
         "(e.g. the next logical step, a harder variant, or a real-world deployment of it). "
-        "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
+        f"Respond with ONLY a valid JSON array containing EXACTLY {num_ideas} objects, no other text. Each object must be complete and detailed. Do not stop after the first idea. Make all ideas meaningfully different. Use exactly this format:\n"
         '[{"title": "...", "problem": "...", "approach": "...", '
         '"required_skills": ["skill1", "skill2"], "difficulty": "Beginner|Intermediate|Advanced"}]\n'
     )
-    result = ollama_client.generate_json(prompt, num_predict=280)
+    result = ollama_client.generate_json(prompt, num_predict=220)
     if isinstance(result, dict):
         result = result.get("ideas", [])
     return result
@@ -197,14 +239,27 @@ def generate_research_ideas(full_text_sample: str, interests: List[str], num_ide
     interests_str = ", ".join(interests) if interests else "general improvements on this paper"
     prompt = (
         f"Based on the research paper content below and the user's interests "
-        f"({interests_str}), propose {num_ideas} concrete, specific project/research "
+        f"({interests_str}), propose EXACTLY {num_ideas} different, detailed, concrete, specific project/research "
         "ideas that build on or extend this paper. "
-        "Respond with ONLY a JSON array, no other text, in exactly this format:\n"
+        f"Respond with ONLY a valid JSON array containing EXACTLY {num_ideas} objects, no other text. Each object must be complete and detailed. Do not stop after the first idea. Make all ideas meaningfully different. Use exactly this format:\n"
         '[{"title": "...", "problem": "...", "approach": "...", '
         '"required_skills": ["skill1", "skill2"], "difficulty": "Beginner|Intermediate|Advanced"}]\n\n'
         f"PAPER CONTENT:\n{full_text_sample[:2000]}\n"
     )
-    result = ollama_client.generate_json(prompt, num_predict=350)
+    result = ollama_client.generate_json(prompt, num_predict=600)
     if isinstance(result, dict):
         result = result.get("ideas", [])
     return result
+
+
+
+
+
+
+
+
+
+
+
+
+

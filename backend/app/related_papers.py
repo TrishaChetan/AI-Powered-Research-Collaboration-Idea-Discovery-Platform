@@ -20,28 +20,62 @@ def search_related_papers(query: str, max_results: int = 5) -> List[Dict]:
         "sortBy": "relevance",
         "sortOrder": "descending",
     }
-    try:
-        resp = requests.get(ARXIV_API_URL, params=params, timeout=20)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"arXiv search failed: {e}") from e
+
+    for attempt in range(2):
+        try:
+            resp = requests.get(
+                ARXIV_API_URL,
+                params=params,
+                timeout=8,
+                headers={
+                    "User-Agent": "ResearchAIPlatform/1.0 (academic research tool)"
+                },
+            )
+
+            if resp.status_code == 429 and attempt == 0:
+                import time
+                time.sleep(2)
+                continue
+
+            resp.raise_for_status()
+            break
+
+        except requests.exceptions.RequestException:
+            if attempt == 1:
+                return []
 
     root = ET.fromstring(resp.text)
     results = []
+
     for entry in root.findall(f"{ATOM_NS}entry"):
-        title = entry.findtext(f"{ATOM_NS}title", default="").strip().replace("\n", " ")
-        summary = entry.findtext(f"{ATOM_NS}summary", default="").strip().replace("\n", " ")
-        published = entry.findtext(f"{ATOM_NS}published", default="")
-        url = entry.findtext(f"{ATOM_NS}id", default="")
+        title = entry.findtext(
+            f"{ATOM_NS}title", default=""
+        ).strip().replace("\n", " ")
+
+        summary = entry.findtext(
+            f"{ATOM_NS}summary", default=""
+        ).strip().replace("\n", " ")
+
+        published = entry.findtext(
+            f"{ATOM_NS}published", default=""
+        )
+
+        url = entry.findtext(
+            f"{ATOM_NS}id", default=""
+        )
+
         authors = [
             a.findtext(f"{ATOM_NS}name", default="").strip()
             for a in entry.findall(f"{ATOM_NS}author")
         ]
+
         results.append({
             "title": title,
             "authors": authors,
-            "summary": summary[:400] + ("…" if len(summary) > 400 else ""),
+            "summary": summary[:400] + ("..." if len(summary) > 400 else ""),
             "url": url,
-            "published": published[:10],  # just the date
+            "published": published[:10],
         })
+
     return results
+

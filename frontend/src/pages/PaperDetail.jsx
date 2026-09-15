@@ -83,11 +83,16 @@ export default function PaperDetail() {
   const handleRelated = async () => {
     setBusy(true)
     setError('')
+    setRelated(null)
     try {
       const res = await api.relatedPapers(id)
       setRelated(res)
+      if (!res || res.length === 0) {
+        setError('arXiv is temporarily unavailable or returned no matching papers. Please try again shortly.')
+      }
     } catch (e) {
-      setError(e.message)
+      setError('Unable to search arXiv right now. Please try again shortly.')
+      setRelated(null)
     } finally {
       setBusy(false)
     }
@@ -264,3 +269,4 @@ export default function PaperDetail() {
     </div>
   )
 }
+

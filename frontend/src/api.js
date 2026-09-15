@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8001'
+const BASE_URL = 'http://127.0.0.1:8002'
 
 function getToken() {
   return localStorage.getItem('token')
@@ -63,3 +63,5 @@ export const api = {
 }
 
 export default api
+
+

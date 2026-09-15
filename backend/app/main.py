@@ -14,6 +14,11 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Research AI Platform API")
 
+@app.on_event("startup")
+def preload_rag_model():
+    rag.get_embedder()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -219,7 +224,7 @@ def paper_gaps(paper_id: int, db: Session = Depends(get_db)):
 
 @app.get("/papers/{paper_id}/related", response_model=List[schemas.RelatedPaper])
 def paper_related(paper_id: int, db: Session = Depends(get_db)):
-    """Related Papers Finder — pulls real related papers from arXiv's free API."""
+    """Related Papers Finder â€” pulls real related papers from arXiv's free API."""
     paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -233,7 +238,7 @@ def paper_related(paper_id: int, db: Session = Depends(get_db)):
 
 @app.post("/papers/compare", response_model=schemas.CompareResponse)
 def compare_papers(payload: schemas.CompareRequest, db: Session = Depends(get_db)):
-    """Paper Comparison — compares 2+ uploaded papers side-by-side."""
+    """Paper Comparison â€” compares 2+ uploaded papers side-by-side."""
     if len(payload.paper_ids) < 2:
         raise HTTPException(status_code=400, detail="Select at least 2 papers to compare")
 
@@ -314,7 +319,7 @@ def build_on_idea(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Idea Lineage — generates follow-up ideas that extend an existing saved idea."""
+    """Idea Lineage â€” generates follow-up ideas that extend an existing saved idea."""
     parent = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Idea not found")
@@ -350,7 +355,7 @@ def build_on_idea(
 
 @app.get("/ideas/{idea_id}/export")
 def export_idea(idea_id: int, db: Session = Depends(get_db)):
-    """Export to Document — downloads a saved idea as a research-proposal PDF."""
+    """Export to Document â€” downloads a saved idea as a research-proposal PDF."""
     idea = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
     if not idea:
         raise HTTPException(status_code=404, detail="Idea not found")
