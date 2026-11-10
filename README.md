@@ -75,6 +75,16 @@ internet the first time only). The API will be live at
 http://localhost:8002, with interactive docs at
 http://localhost:8002/docs.
 
+### Auth secret
+
+Login tokens are signed with `JWT_SECRET_KEY`. Set it in your environment for any shared or deployed instance:
+
+```bash
+export JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+```
+
+If it isn't set, the backend generates a random key on first start and saves it to `backend/.jwt_secret` (git-ignored), so nothing secret lives in the repository.
+
 ## 3. Run the frontend
 
 ```bash

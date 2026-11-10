@@ -1,8 +1,16 @@
 """
-Minimal JWT-based auth. Good enough for a student project demo -- swap the
-SECRET_KEY for an env var before deploying this anywhere real.
+Minimal JWT-based auth.
+
+The signing key comes from the JWT_SECRET_KEY environment variable. If it
+isn't set, a random key is generated once and saved to backend/.jwt_secret
+(git-ignored), so logins survive restarts but the key is never in the repo.
+Previously the key was hard-coded, which let anyone who read the source
+forge a token for any user.
 """
+import os
+import secrets
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -13,7 +21,24 @@ from sqlalchemy.orm import Session
 from . import models
 from .database import get_db
 
-SECRET_KEY = "dev-secret-change-me"  # move to an environment variable in production
+SECRET_FILE = Path(__file__).resolve().parent.parent / ".jwt_secret"
+
+
+def _load_or_create_secret(path: Path = SECRET_FILE) -> str:
+    if path.exists():
+        existing = path.read_text().strip()
+        if existing:
+            return existing
+    key = secrets.token_urlsafe(48)
+    path.write_text(key)
+    try:
+        path.chmod(0o600)  # owner-only; no-op on Windows
+    except OSError:
+        pass
+    return key
+
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or _load_or_create_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week, convenient for a demo
 

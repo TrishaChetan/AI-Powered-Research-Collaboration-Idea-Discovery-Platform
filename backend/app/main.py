@@ -1,4 +1,6 @@
 import os
+import re
+import uuid
 import shutil
 from typing import List
 
@@ -140,14 +142,18 @@ def upload_paper(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    safe_name = f"user{current_user.id}_{file.filename}".replace(" ", "_")
+    # Strip any directory parts and odd characters, and add a random suffix so
+    # two uploads with the same name don't overwrite each other's file.
+    original = os.path.basename(file.filename.replace("\\", "/"))
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", original)[-100:]
+    safe_name = f"user{current_user.id}_{uuid.uuid4().hex[:8]}_{cleaned}"
     dest_path = os.path.join(UPLOAD_DIR, safe_name)
     with open(dest_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     paper = models.Paper(
         user_id=current_user.id,
-        title=file.filename.rsplit(".", 1)[0],
+        title=original.rsplit(".", 1)[0],
         file_path=dest_path,
     )
     db.add(paper)

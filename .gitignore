@@ -7,3 +7,4 @@ venv/
 chroma_store/
 uploads/*.pdf
 .env
+.jwt_secret
