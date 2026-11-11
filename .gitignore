@@ -8,3 +8,5 @@ chroma_store/
 uploads/*.pdf
 .env
 .jwt_secret
+__pycache__/
+.pytest_cache/

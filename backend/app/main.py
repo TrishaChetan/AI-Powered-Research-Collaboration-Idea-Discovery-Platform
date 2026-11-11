@@ -79,6 +79,19 @@ def paper_sample_text(paper: models.Paper) -> str:
 # Auth routes
 # ---------------------------------------------------------------------------
 
+def get_owned_paper(db: Session, paper_id: int, user: models.User) -> models.Paper:
+    """Fetch a paper the current user owns. Other users' papers return 404
+    (not 403) so paper ids can't be probed."""
+    paper = (
+        db.query(models.Paper)
+        .filter(models.Paper.id == paper_id, models.Paper.user_id == user.id)
+        .first()
+    )
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return paper
+
+
 @app.post("/auth/register", response_model=schemas.Token)
 def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = db.query(models.User).filter(models.User.email == payload.email).first()
@@ -125,7 +138,7 @@ def get_me(current_user: models.User = Depends(auth.get_current_user)):
 # ---------------------------------------------------------------------------
 
 @app.get("/users", response_model=List[schemas.UserOut])
-def list_users(db: Session = Depends(get_db)):
+def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     return [user_to_out(u) for u in db.query(models.User).all()]
 
 
@@ -178,18 +191,14 @@ def list_papers(db: Session = Depends(get_db), current_user: models.User = Depen
 
 
 @app.get("/papers/{paper_id}", response_model=schemas.PaperOut)
-def get_paper(paper_id: int, db: Session = Depends(get_db)):
-    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+def get_paper(paper_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    paper = get_owned_paper(db, paper_id, current_user)
     return paper
 
 
 @app.post("/papers/{paper_id}/summarize", response_model=schemas.PaperOut)
-def summarize_paper(paper_id: int, db: Session = Depends(get_db)):
-    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+def summarize_paper(paper_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    paper = get_owned_paper(db, paper_id, current_user)
 
     sample = paper_sample_text(paper)
     try:
@@ -204,10 +213,8 @@ def summarize_paper(paper_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/papers/{paper_id}/ask", response_model=schemas.AskResponse)
-def ask_paper(paper_id: int, payload: schemas.AskRequest, db: Session = Depends(get_db)):
-    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+def ask_paper(paper_id: int, payload: schemas.AskRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    paper = get_owned_paper(db, paper_id, current_user)
     try:
         result = rag.answer_question(paper_id, payload.question)
     except rag.ollama_client.OllamaError as e:
@@ -216,10 +223,8 @@ def ask_paper(paper_id: int, payload: schemas.AskRequest, db: Session = Depends(
 
 
 @app.get("/papers/{paper_id}/gaps")
-def paper_gaps(paper_id: int, db: Session = Depends(get_db)):
-    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+def paper_gaps(paper_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    paper = get_owned_paper(db, paper_id, current_user)
     sample = paper_sample_text(paper)
     try:
         gaps = rag.identify_research_gaps(sample)
@@ -229,11 +234,9 @@ def paper_gaps(paper_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/papers/{paper_id}/related", response_model=List[schemas.RelatedPaper])
-def paper_related(paper_id: int, db: Session = Depends(get_db)):
+def paper_related(paper_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """Related Papers Finder â€” pulls real related papers from arXiv's free API."""
-    paper = db.query(models.Paper).filter(models.Paper.id == paper_id).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+    paper = get_owned_paper(db, paper_id, current_user)
     query = paper.topics if paper.topics else paper.title
     try:
         results = related_papers.search_related_papers(query or paper.title, max_results=6)
@@ -243,17 +246,14 @@ def paper_related(paper_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/papers/compare", response_model=schemas.CompareResponse)
-def compare_papers(payload: schemas.CompareRequest, db: Session = Depends(get_db)):
+def compare_papers(payload: schemas.CompareRequest, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     """Paper Comparison â€” compares 2+ uploaded papers side-by-side."""
     if len(payload.paper_ids) < 2:
         raise HTTPException(status_code=400, detail="Select at least 2 papers to compare")
 
     papers = []
     for pid in payload.paper_ids:
-        paper = db.query(models.Paper).filter(models.Paper.id == pid).first()
-        if not paper:
-            raise HTTPException(status_code=404, detail=f"Paper {pid} not found")
-        papers.append(paper)
+        papers.append(get_owned_paper(db, pid, current_user))
 
     samples = [{"title": p.title, "text": paper_sample_text(p)} for p in papers]
     try:
@@ -281,9 +281,7 @@ def generate_ideas(
     sample = ""
     paper = None
     if payload.paper_id:
-        paper = db.query(models.Paper).filter(models.Paper.id == payload.paper_id).first()
-        if not paper:
-            raise HTTPException(status_code=404, detail="Paper not found")
+        paper = get_owned_paper(db, payload.paper_id, current_user)
         sample = paper_sample_text(paper)
 
     interests = payload.interests or [i.name for i in current_user.interests]
