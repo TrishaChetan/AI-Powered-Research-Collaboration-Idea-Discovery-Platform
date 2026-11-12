@@ -218,14 +218,13 @@ export default function PaperDetail() {
                   <p className="text-xs text-gray-500 mt-2">Skills: {idea.required_skills_text}</p>
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs px-2 py-1 rounded bg-brand-50 text-brand-700">{idea.difficulty}</span>
-                    <a
-                      href={api.exportIdeaUrl(idea.id)}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => api.downloadIdeaPdf(idea.id, idea.title).catch((e) => alert(e.message))}
                       className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
                     >
                       Export PDF
-                    </a>
+                    </button>
                   </div>
                 </div>
               ))}

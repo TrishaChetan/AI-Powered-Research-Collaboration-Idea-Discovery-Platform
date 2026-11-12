@@ -51,7 +51,22 @@ export const api = {
   listIdeas: () => request('/ideas'),
   buildOnIdea: (ideaId, numIdeas = 2) =>
     request(`/ideas/${ideaId}/build-on`, { method: 'POST', body: { num_ideas: numIdeas } }),
-  exportIdeaUrl: (ideaId) => `${BASE_URL}/ideas/${ideaId}/export`,
+  // Fetch the PDF with the auth header (a plain <a href> can't send it), then save it
+  downloadIdeaPdf: async (ideaId, title = 'research-idea') => {
+    const res = await fetch(`${BASE_URL}/ideas/${ideaId}/export`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    if (!res.ok) throw new Error(res.status === 404 ? 'Idea not found' : res.statusText)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'research-idea'}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 
   relatedPapers: (paperId) => request(`/papers/${paperId}/related`),
   comparePapers: (paperIds) => request('/papers/compare', { method: 'POST', body: { paper_ids: paperIds } }),

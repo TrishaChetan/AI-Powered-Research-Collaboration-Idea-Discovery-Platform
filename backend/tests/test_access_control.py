@@ -106,3 +106,33 @@ def test_compare_rejects_foreign_paper(client, setup):
     _, bob, pid = setup
     r = client.post("/papers/compare", json={"paper_ids": [pid, pid]}, headers=bob)
     assert r.status_code == 404
+
+
+@pytest.fixture(scope="module")
+def idea(client, setup):
+    alice, _, pid = setup
+    alice_id = client.get("/auth/me", headers=alice).json()["id"]
+    db = TestSession()
+    i = models.ResearchIdea(title="Alice idea", user_id=alice_id, paper_id=pid, problem="p", approach="a")
+    db.add(i)
+    db.commit()
+    iid = i.id
+    db.close()
+    return iid
+
+
+def test_idea_export_requires_owner(client, setup, idea, monkeypatch, tmp_path):
+    alice, bob, _ = setup
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    monkeypatch.setattr(main.export_module, "export_idea_to_pdf", lambda d: str(pdf))
+    assert client.get(f"/ideas/{idea}/export").status_code == 401
+    assert client.get(f"/ideas/{idea}/export", headers=bob).status_code == 404
+    r = client.get(f"/ideas/{idea}/export", headers=alice)
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+def test_build_on_others_idea_is_404(client, setup, idea):
+    _, bob, _ = setup
+    r = client.post(f"/ideas/{idea}/build-on", json={"num_ideas": 1}, headers=bob)
+    assert r.status_code == 404

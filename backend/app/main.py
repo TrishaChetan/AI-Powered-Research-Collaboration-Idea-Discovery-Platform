@@ -92,6 +92,18 @@ def get_owned_paper(db: Session, paper_id: int, user: models.User) -> models.Pap
     return paper
 
 
+def get_owned_idea(db: Session, idea_id: int, user: models.User) -> models.ResearchIdea:
+    """Fetch an idea the current user owns; others' ideas return 404."""
+    idea = (
+        db.query(models.ResearchIdea)
+        .filter(models.ResearchIdea.id == idea_id, models.ResearchIdea.user_id == user.id)
+        .first()
+    )
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return idea
+
+
 @app.post("/auth/register", response_model=schemas.Token)
 def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = db.query(models.User).filter(models.User.email == payload.email).first()
@@ -324,9 +336,7 @@ def build_on_idea(
     current_user: models.User = Depends(auth.get_current_user),
 ):
     """Idea Lineage â€” generates follow-up ideas that extend an existing saved idea."""
-    parent = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
-    if not parent:
-        raise HTTPException(status_code=404, detail="Idea not found")
+    parent = get_owned_idea(db, idea_id, current_user)
 
     try:
         raw_ideas = rag.build_on_idea(
@@ -358,11 +368,10 @@ def build_on_idea(
 
 
 @app.get("/ideas/{idea_id}/export")
-def export_idea(idea_id: int, db: Session = Depends(get_db)):
+def export_idea(idea_id: int, db: Session = Depends(get_db),
+                current_user: models.User = Depends(auth.get_current_user)):
     """Export to Document â€” downloads a saved idea as a research-proposal PDF."""
-    idea = db.query(models.ResearchIdea).filter(models.ResearchIdea.id == idea_id).first()
-    if not idea:
-        raise HTTPException(status_code=404, detail="Idea not found")
+    idea = get_owned_idea(db, idea_id, current_user)
 
     file_path = export_module.export_idea_to_pdf({
         "id": idea.id,

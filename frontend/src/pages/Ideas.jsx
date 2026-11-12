@@ -31,14 +31,13 @@ function IdeaCard({ idea, onBuildOn, busyId, childCount }) {
         >
           {busyId === idea.id ? 'Generating…' : 'Build on this idea'}
         </button>
-        <a
-          href={api.exportIdeaUrl(idea.id)}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => api.downloadIdeaPdf(idea.id, idea.title).catch((e) => alert(e.message))}
           className="text-sm px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
         >
           Export as PDF
-        </a>
+        </button>
       </div>
     </div>
   )
