@@ -208,6 +208,29 @@ def get_paper(paper_id: int, db: Session = Depends(get_db), current_user: models
     return paper
 
 
+@app.delete("/papers/{paper_id}", status_code=204)
+def delete_paper(paper_id: int, db: Session = Depends(get_db),
+                 current_user: models.User = Depends(auth.get_current_user)):
+    """Delete one of your papers: the DB record, its stored PDF and its search-index chunks.
+    Ideas generated from it are kept (they just lose the link to the paper)."""
+    paper = get_owned_paper(db, paper_id, current_user)
+    db.query(models.ResearchIdea).filter(models.ResearchIdea.paper_id == paper.id).update(
+        {models.ResearchIdea.paper_id: None}, synchronize_session=False)
+    file_path = paper.file_path
+    db.delete(paper)
+    db.commit()
+    rag.remove_paper(paper_id)
+    # only ever delete files inside the upload folder
+    try:
+        upload_root = os.path.realpath(UPLOAD_DIR)
+        real = os.path.realpath(file_path or "")
+        if real.startswith(upload_root + os.sep) and os.path.isfile(real):
+            os.remove(real)
+    except OSError:
+        pass
+    return None
+
+
 @app.post("/papers/{paper_id}/summarize", response_model=schemas.PaperOut)
 def summarize_paper(paper_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     paper = get_owned_paper(db, paper_id, current_user)

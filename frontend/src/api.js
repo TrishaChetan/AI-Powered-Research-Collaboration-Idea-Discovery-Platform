@@ -38,6 +38,7 @@ export const api = {
 
   listPapers: () => request('/papers'),
   getPaper: (id) => request(`/papers/${id}`),
+  deletePaper: (id) => request(`/papers/${id}`, { method: 'DELETE' }),
   uploadPaper: (file) => {
     const form = new FormData()
     form.append('file', file)

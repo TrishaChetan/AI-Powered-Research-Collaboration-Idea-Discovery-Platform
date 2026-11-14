@@ -136,3 +136,32 @@ def test_build_on_others_idea_is_404(client, setup, idea):
     _, bob, _ = setup
     r = client.post(f"/ideas/{idea}/build-on", json={"num_ideas": 1}, headers=bob)
     assert r.status_code == 404
+
+
+def test_delete_paper_owner_only(client, setup, tmp_path, monkeypatch):
+    alice, bob, _ = setup
+    alice_id = client.get("/auth/me", headers=alice).json()["id"]
+    removed = []
+    monkeypatch.setattr(main.rag, "remove_paper", lambda pid: removed.append(pid))
+    pdf = os.path.join(main.UPLOAD_DIR, "user_test_delete.pdf")
+    os.makedirs(main.UPLOAD_DIR, exist_ok=True)
+    open(pdf, "wb").write(b"%PDF")
+    db = TestSession()
+    paper = models.Paper(title="To delete", user_id=alice_id, file_path=pdf)
+    db.add(paper)
+    db.commit()
+    idea = models.ResearchIdea(title="Child idea", user_id=alice_id, paper_id=paper.id, problem="p", approach="a")
+    db.add(idea)
+    db.commit()
+    pid, iid = paper.id, idea.id
+    db.close()
+
+    assert client.delete(f"/papers/{pid}").status_code == 401
+    assert client.delete(f"/papers/{pid}", headers=bob).status_code == 404
+    assert client.delete(f"/papers/{pid}", headers=alice).status_code == 204
+    assert client.get(f"/papers/{pid}", headers=alice).status_code == 404
+    assert removed == [pid] and not os.path.exists(pdf)
+    db = TestSession()
+    kept = db.get(models.ResearchIdea, iid)
+    assert kept is not None and kept.paper_id is None   # idea survives, link cleared
+    db.close()

@@ -85,6 +85,14 @@ def index_paper(paper_id: int, file_path: str) -> int:
     return len(chunks)
 
 
+def remove_paper(paper_id: int) -> None:
+    """Drop a paper's chunks from the vector store (no-op if none were indexed)."""
+    try:
+        get_collection().delete(where={"paper_id": paper_id})
+    except Exception as e:  # never block deleting the DB row because of the index
+        print(f"[rag] could not remove chunks for paper {paper_id}: {e}")
+
+
 def retrieve_relevant_chunks(paper_id: int, question: str, top_k: int = 4) -> List[Dict]:
     embedder = get_embedder()
     query_embedding = embedder.encode([question], show_progress_bar=False, normalize_embeddings=True).tolist()

@@ -104,8 +104,27 @@ export default function PaperDetail() {
   return (
     <div>
       <button onClick={() => navigate('/papers')} className="text-sm text-gray-500 hover:text-brand-600">← Back to papers</button>
-      <h1 className="text-2xl font-bold mt-2">{paper.title}</h1>
-      <p className="text-sm text-gray-500">{paper.num_chunks} chunks indexed</p>
+      <div className="flex items-start justify-between gap-4 mt-2">
+        <div>
+          <h1 className="text-2xl font-bold">{paper.title}</h1>
+          <p className="text-sm text-gray-500">{paper.num_chunks} chunks indexed</p>
+        </div>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!window.confirm(`Delete "${paper.title}"? Its PDF and search index will be removed. Ideas you generated from it are kept.`)) return
+            try {
+              await api.deletePaper(paper.id)
+              navigate('/papers')
+            } catch (e) {
+              setError(e.message)
+            }
+          }}
+          className="shrink-0 text-sm px-3 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+        >
+          Delete paper
+        </button>
+      </div>
 
       <div className="flex gap-2 mt-6 border-b border-gray-200">
         {TABS.map((t) => (
